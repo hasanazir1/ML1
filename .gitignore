@@ -1,0 +1,5 @@
+.env
+flask_app/uploads/
+*.db
+**/__pycache__/
+*.pyc

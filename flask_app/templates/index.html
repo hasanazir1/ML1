@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Opportunity Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <header class="hero">
+        <div class="hero-inner">
+            <div class="logo">🤖</div>
+            <h1>AI Opportunity Agent</h1>
+            <p class="subtitle">حلّك الذكي للبحث عن وظائف مطابقة لملفك الشخصي</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <section id="upload-section" class="card upload-card">
+            <h2>📄 ارفع سيرتك الذاتية</h2>
+            <p class="muted">ارفع ملف PDF وسنقوم بتحليله ومقارنته مع الوظائف المتاحة</p>
+            <form id="upload-form">
+                <div class="file-input-wrapper">
+                    <input type="file" id="cv-file" name="file" accept=".pdf" required>
+                    <label for="cv-file" class="file-label"><span id="file-name">اختر ملف PDF</span></label>
+                </div>
+                <button type="submit" id="upload-btn" class="btn btn-primary">رفع وتحليل</button>
+            </form>
+            <div id="upload-error" class="error-message"></div>
+        </section>
+
+        <section id="progress-section" class="card hidden">
+            <h2>⏳ جاري التحليل...</h2>
+            <div id="progress-steps">
+                <div class="step" data-step="cv_analysis"><div class="step-icon">📝</div><div class="step-label">تحليل السيرة الذاتية</div><div class="step-status"></div></div>
+                <div class="step" data-step="embedding"><div class="step-icon">🔢</div><div class="step-label">التمثيل الرقمي</div><div class="step-status"></div></div>
+                <div class="step" data-step="fetch_jobs"><div class="step-icon">📥</div><div class="step-label">جلب الوظائف</div><div class="step-status"></div></div>
+                <div class="step" data-step="matching"><div class="step-icon">🎯</div><div class="step-label">المطابقة</div><div class="step-status"></div></div>
+                <div class="step" data-step="complete"><div class="step-icon">✅</div><div class="step-label">اكتمل</div><div class="step-status"></div></div>
+            </div>
+            <div id="progress-message" class="progress-message"></div>
+        </section>
+
+        <section id="results-section" class="hidden">
+            <div id="profile-summary" class="card"><h2>👤 ملخص الملف الشخصي</h2><div id="profile-content"></div></div>
+            <div class="card"><h2>🎯 نتائج المطابقة</h2><div id="results-list"></div></div>
+            <div class="card chat-card">
+                <h2>💬 Match Agent</h2>
+                <div id="chat-messages" class="chat-messages"></div>
+                <form id="chat-form" class="chat-form">
+                    <input type="text" id="chat-input" placeholder="اسأل عن نتائج المطابقة..." autocomplete="off">
+                    <button type="submit" class="btn btn-chat">إرسال</button>
+                </form>
+            </div>
+        </section>
+    </div>
+    <script>const PROFILE_ID = {{ profile_id | default('null') }};</script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
