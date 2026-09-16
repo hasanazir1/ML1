@@ -2,8 +2,10 @@
 import json
 import os
 import sqlite3
+import csv
+from contextlib import closing
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "opportunity_agent.db")
+DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(__file__), "opportunity_agent.db")
 
 
 def get_connection():
@@ -42,7 +44,7 @@ def _parse_embedding(d):
         d["embedding"] = None
 
 def init_db():
-    """Create tables and seed roles when the table is empty."""
+    """Create/upgrade tables without deleting data; CSV owns role configuration."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -52,20 +54,33 @@ def init_db():
             with open(os.path.join(create_dir, filename), "r", encoding="utf-8") as f:
                 cur.executescript(f.read())
 
-    cur.execute("SELECT COUNT(*) FROM llm_roles")
-    if cur.fetchone()[0] == 0:
-        import csv
-        csv_path = os.path.join(os.path.dirname(__file__), "initial_data", "llm_roles.csv")
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                cur.execute(
-                    """INSERT INTO llm_roles (role, domain, specific_instructions,
-                       background_context, few_shot_examples)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (row["role"], row["domain"], row["specific_instructions"],
-                     row.get("background_context", ""), row.get("few_shot_examples", ""))
-                )
+    # Small additive migration: old profiles remain explicitly 'legacy'.
+    additions = {
+        'cv_profiles': {'analysis_status': "TEXT DEFAULT 'legacy'", 'progress_json': 'TEXT',
+                        'embedding_model': 'TEXT'},
+        'jobs': {'embedding_model': 'TEXT'},
+        'chat_messages': {'job_id': 'INTEGER REFERENCES jobs(job_id)'},
+    }
+    for table, columns in additions.items():
+        existing = {row[1] for row in cur.execute(f'PRAGMA table_info({table})')}
+        for column, declaration in columns.items():
+            if column not in existing:
+                cur.execute(f'ALTER TABLE {table} ADD COLUMN {column} {declaration}')
+    cur.execute('CREATE INDEX IF NOT EXISTS matches_profile ON match_results(profile_id)')
+    cur.execute('CREATE INDEX IF NOT EXISTS messages_profile ON chat_messages(profile_id, message_id)')
+
+    csv_path = os.path.join(os.path.dirname(__file__), "initial_data", "llm_roles.csv")
+    with open(csv_path, "r", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            cur.execute(
+                """INSERT INTO llm_roles (role, domain, specific_instructions,
+                   background_context, few_shot_examples) VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(role) DO UPDATE SET domain=excluded.domain,
+                   specific_instructions=excluded.specific_instructions,
+                   background_context=excluded.background_context,
+                   few_shot_examples=excluded.few_shot_examples""",
+                (row['role'], row['domain'], row['specific_instructions'],
+                 row.get('background_context', ''), row.get('few_shot_examples', '')))
 
     conn.commit()
     conn.close()
@@ -76,7 +91,7 @@ def insert_cv_profile(device_id, raw_text):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO cv_profiles (device_id, raw_text) VALUES (?, ?)",
+        "INSERT INTO cv_profiles (device_id, raw_text, analysis_status) VALUES (?, ?, 'pending')",
         (device_id, raw_text)
     )
     pid = cur.lastrowid
@@ -105,7 +120,7 @@ def get_cv_profile(profile_id):
 def update_cv_profile(profile_id, **kwargs):
     """Update allowed CV profile fields."""
     allowed = ("name", "email", "skills", "experience", "education",
-               "field", "level", "summary", "embedding")
+               "field", "level", "summary", "embedding", "embedding_model")
     fields = []
     values = []
     for key, val in kwargs.items():
@@ -119,9 +134,10 @@ def update_cv_profile(profile_id, **kwargs):
     if not fields:
         return
     values.append(profile_id)
+    set_clause = ",".join(fields)
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"UPDATE cv_profiles SET {",".join(fields)} WHERE profile_id=?", values)
+    cur.execute(f"UPDATE cv_profiles SET {set_clause} WHERE profile_id=?", values)
     conn.commit()
     conn.close()
 
@@ -165,13 +181,13 @@ def get_job(job_id):
     return dict_from_row(row)
 
 
-def update_job_embedding(job_id, embedding):
+def update_job_embedding(job_id, embedding, model=None):
     """Save a job embedding."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE jobs SET embedding=? WHERE job_id=?",
-        (json.dumps(embedding), job_id)
+        "UPDATE jobs SET embedding=?, embedding_model=? WHERE job_id=?",
+        (json.dumps(embedding), model, job_id)
     )
     conn.commit()
     conn.close()
@@ -221,7 +237,7 @@ def get_match_results(profile_id):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "SELECT m.*, j.title AS job_title, j.company AS job_company, j.description AS job_description, j.link AS job_link, j.location AS job_location FROM match_results m INNER JOIN jobs j ON j.job_id=m.job_id WHERE m.profile_id=? ORDER BY m.match_score DESC",
+        "SELECT m.*, j.title AS job_title, j.company AS job_company, j.description AS job_description, j.link AS job_link, j.location AS job_location FROM match_results m INNER JOIN jobs j ON j.job_id=m.job_id WHERE m.profile_id=? ORDER BY m.match_score DESC, m.job_id ASC",
         (profile_id,))
     rows = cur.fetchall()
     conn.close()
@@ -244,12 +260,12 @@ def has_match_results(profile_id):
     return c > 0
 
 
-def insert_chat_message(profile_id, sender, message):
+def insert_chat_message(profile_id, sender, message, job_id=None):
     """Insert one chat message."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("INSERT INTO chat_messages (profile_id,sender,message) VALUES (?,?,?)",
-                (profile_id, sender, message))
+    cur.execute("INSERT INTO chat_messages (profile_id,sender,message,job_id) VALUES (?,?,?,?)",
+                (profile_id, sender, message, job_id))
     conn.commit()
     conn.close()
 
@@ -258,11 +274,47 @@ def get_chat_messages(profile_id):
     """Return chat messages for a profile."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM chat_messages WHERE profile_id=? ORDER BY created_at ASC",
+    cur.execute("SELECT * FROM chat_messages WHERE profile_id=? ORDER BY message_id ASC",
                 (profile_id,))
     rows = [dict_from_row(r) for r in cur.fetchall()]
     conn.close()
     return rows
+
+
+def get_recent_chat_messages(profile_id, limit=6):
+    """Return a bounded conversation window in chronological order."""
+    with closing(get_connection()) as conn:
+        rows = conn.execute(
+            'SELECT sender,message,job_id FROM chat_messages WHERE profile_id=? '
+            'ORDER BY message_id DESC LIMIT ?', (profile_id, limit)).fetchall()
+    return [dict(row) for row in reversed(rows)]
+
+
+def save_progress(profile_id, payload):
+    """Persist the same event that the browser receives through Socket.IO."""
+    status = {'complete': 'completed', 'error': 'failed'}.get(payload['stage'], payload['stage'])
+    with closing(get_connection()) as conn, conn:
+        conn.execute('UPDATE cv_profiles SET analysis_status=?, progress_json=? WHERE profile_id=?',
+                     (status, json.dumps(payload, ensure_ascii=False), profile_id))
+
+
+def recover_interrupted_analyses():
+    """Call ONCE at single-process server startup, before accepting uploads.
+
+    Work is not resumed automatically. Existing results stay available and the
+    user is told to re-upload; a new upload creates a separate profile.
+    """
+    with closing(get_connection()) as conn, conn:
+        rows = conn.execute("SELECT profile_id FROM cv_profiles WHERE analysis_status IN "
+                            "('pending','cv_analysis','embedding','fetch_jobs','matching')").fetchall()
+        for row in rows:
+            pid = row['profile_id']
+            count = conn.execute('SELECT COUNT(*) FROM match_results WHERE profile_id=?', (pid,)).fetchone()[0]
+            stage = 'partial' if count else 'failed'
+            payload = {'stage': stage, 'message': 'انقطع التحليل عند إيقاف الخادم. يرجى إعادة رفع السيرة لإجراء تحليل جديد.',
+                       'data': {'interrupted': True, 'succeeded': count}}
+            conn.execute('UPDATE cv_profiles SET analysis_status=?,progress_json=? WHERE profile_id=?',
+                         (stage, json.dumps(payload, ensure_ascii=False), pid))
 
 
 def get_llm_role(role):

@@ -44,7 +44,7 @@ def _detect_location(text):
 
 
 def _extract_company(title, description):
-    """Return a company name from the title or description."""
+    """Return a company name from the title or description, or "" if unknown."""
     for sep in [" - ", " – ", " — "]:
         if sep in title:
             parts = title.rsplit(sep, 1)
@@ -54,20 +54,30 @@ def _extract_company(title, description):
 
     patterns = [
         r"تعلن\s+شركة\s+([^\n\.\,\،\(\)]+)",
+        r"(?:تعلن|يعلن)\s+(?:من\s+)?(?:مؤسسة|جمعية|شركة|جامعة|بنك)\s+([^\n\.\,\،\(\)]+)",
         r"تعلن\s+([^\n\.\,\،\(\)]+)\s+عن\s+توفر",
         r"نبذة\s+عن\s+المؤسسة\s+([^\n\.\,\،\(\)]+)",
         r"انضم\s+إلى\s+فريق\s+([^\n\.\,\،\(\)]+)",
+        r"About\s+Us\s+([^\n\.\,]+?)\s+is\s+(?:a|an|the)\b",
+        r"^([A-Z][A-Za-z0-9&\.\-']*(?:\s+[A-Z][A-Za-z0-9&\.\-']*){0,4})\s+is\s+(?:an?\s|the\s)",
         r"(?:at|with|join)\s+([A-Z][a-zA-Z0-9\s&]{2,30})\s+(?:is hiring|seeks|team)",
-        r"(?:Organization|Company):\s*([^\n\.\,]+)"
+        r"(?:Organization|Company|Employer):\s*([^\n\.\,]+)"
     ]
     for pattern in patterns:
         m = re.search(pattern, description, re.IGNORECASE)
         if m:
             comp = m.group(1).strip()
-            if comp and len(comp) < 50:
+            if not comp:
+                continue
+            # Trim boilerplate that gets captured together with the org name.
+            comp = re.split(
+                r"\s+(?:مؤسسة|منظمة|جمعية|شركة)\s+غير\s+حكومية\b|\s+ومسجلة\b|[,،.]",
+                comp)[0].strip(" -–—")
+            if 2 <= len(comp) <= 60 and comp.lower() != "jobs.ps":
                 return comp
 
-    return "jobs.ps"
+    # Unknown company: return empty (never claim the listing site is the employer).
+    return ""
 
 
 def _load_seed_jobs():
@@ -159,8 +169,13 @@ def fetch_jobs_from_rss():
     return jobs
 
 
-def ensure_jobs_available(limit=20):
+def ensure_jobs_available(limit=None):
     """Fetch current jobs, then use stored or seed data as fallback."""
+    if limit is None:
+        try:
+            limit = max(1, min(100, int(os.environ.get('JOBS_LIMIT', '20'))))
+        except ValueError:
+            limit = 20
     rss_jobs = fetch_jobs_from_rss()
     new_count = 0
     for job in rss_jobs:

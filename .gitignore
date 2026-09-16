@@ -1,5 +1,8 @@
 .env
 flask_app/uploads/
 *.db
+*.db-wal
+*.db-shm
+private_archive/
 **/__pycache__/
 *.pyc
