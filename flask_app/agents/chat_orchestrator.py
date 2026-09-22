@@ -11,17 +11,18 @@ from flask_app.utils.prompts import build_agent_prompt
 ALLOWED_AGENTS = {
     "Chat Query Expert",
     "Cover Letter Generator Expert",
+    "CV Improvement Expert",
 }
 
 # Returned when the model's decision cannot be resolved into a confident action.
 NEEDS_CLARIFICATION = "NeedsClarification"
 
 # Output contract shared with the stored "Chat Orchestrator" prompt (llm_roles):
-#   {"agent": "Chat Query Expert" | "Cover Letter Generator Expert",
+#   {"agent": "Chat Query Expert" | "Cover Letter Generator Expert" | "CV Improvement Expert",
 #    "job_id": <job id from the provided list, or null>,
 #    "needs_clarification": <true | false>}
 RESPONSE_CONTRACT = (
-    '{"agent": "Chat Query Expert" أو "Cover Letter Generator Expert", '
+    '{"agent": "Chat Query Expert" أو "Cover Letter Generator Expert" أو "CV Improvement Expert", '
     '"job_id": رقم الوظيفة من القائمة أو null, '
     '"needs_clarification": true أو false}'
 )
@@ -30,7 +31,7 @@ RESPONSE_CONTRACT = (
 def route_message(user_message, jobs_list, history=None):
     """Return the selected agent, job id, and original message.
 
-    target_role is one of: "Chat Query Expert", "Cover Letter Generator Expert",
+    target_role is one of: "Chat Query Expert", "Cover Letter Generator Expert", "CV Improvement Expert",
     or NEEDS_CLARIFICATION when no confident decision can be made.
     """
     role_info = db.get_llm_role("Chat Orchestrator")
@@ -76,10 +77,7 @@ def route_message(user_message, jobs_list, history=None):
         if type(needs_clarification) is not bool:
             raise ValueError('needs_clarification must be a boolean')
         raw_job_id = decision.get("job_id")
-        try:
-            parsed_job_id = raw_job_id if type(raw_job_id) is int else None
-        except (TypeError, ValueError):
-            parsed_job_id = None
+        parsed_job_id = raw_job_id if type(raw_job_id) is int else None
         allowed_ids = {j.get("job_id") for j in jobs_list}
 
         if needs_clarification:
@@ -93,6 +91,14 @@ def route_message(user_message, jobs_list, history=None):
             else:
                 target_role = NEEDS_CLARIFICATION
                 reason = "cover letter requested but job_id missing or not in the user's matched jobs"
+        elif requested_agent == "CV Improvement Expert":
+            if raw_job_id is not None and parsed_job_id not in allowed_ids:
+                target_role = NEEDS_CLARIFICATION
+                reason = "CV improvement requested for a job outside the matched jobs"
+            else:
+                target_role = requested_agent
+                job_id = parsed_job_id
+                reason = "CV improvement request"
         else:
             target_role = requested_agent
             reason = "query request"

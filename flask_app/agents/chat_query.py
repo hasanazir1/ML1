@@ -8,7 +8,7 @@ from flask_app.database import db
 from flask_app.utils.prompts import build_agent_prompt
 
 
-def answer_question(user_message, profile_id, jobs_list=None, history=None):
+def answer_question(user_message, profile_id, jobs_list=None, history=None, selected_job_id=None):
     """Answer a question using the profile's match results."""
     role_info = db.get_llm_role("Chat Query Expert")
     system_prompt = build_agent_prompt(role_info, 'Chat Query Expert', 'أجب بناءً على بيانات المطابقة فقط.')
@@ -18,7 +18,7 @@ def answer_question(user_message, profile_id, jobs_list=None, history=None):
     context_lines = []
     for mr in match_results:
         context_lines.append(
-            f"- {mr.get('job_title', '')} في {mr.get('job_company', '')}: "
+            f"- job_id={mr.get('job_id')}: {mr.get('job_title', '')} في {mr.get('job_company', '')}: "
             f"match_score={mr.get('match_score', 0)}, "
             f"recommendation={mr.get('recommendation', '')}, "
             f"strengths={mr.get('strengths', [])}, "
@@ -26,6 +26,11 @@ def answer_question(user_message, profile_id, jobs_list=None, history=None):
         )
 
     context = "\n".join(context_lines) if context_lines else "لا توجد نتائج مطابقة بعد."
+    selected = next((row for row in match_results if row['job_id'] == selected_job_id), None)
+    if selected:
+        context += (f"\nالوظيفة المختارة صراحة هي job_id={selected_job_id}: {selected['job_title']}. "
+                    "أي إشارة إلى هذه الوظيفة تخصها. يمكن مقارنتها ببقية النتائج أعلاه."
+                    f"\nتعليق التقييم: {selected.get('ai_comment', '')}")
 
     user_prompt = f"""نتائج المطابقة الحالية:
 {context}

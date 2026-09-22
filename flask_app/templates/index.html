@@ -1,61 +1,83 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Opportunity Agent</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#5b5bd6">
+<title>فرصتك القادمة — AI Opportunity Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script defer src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
-    <header class="hero">
-        <div class="hero-inner">
-            <div class="logo">🤖</div>
-            <h1>AI Opportunity Agent</h1>
-            <p class="subtitle">حلّك الذكي للبحث عن وظائف مطابقة لملفك الشخصي</p>
-        </div>
-    </header>
-
-    <div class="container">
-        <section id="upload-section" class="card upload-card">
-            <h2>📄 ارفع سيرتك الذاتية</h2>
-            <p class="muted">ارفع ملف PDF وسنقوم بتحليله ومقارنته مع الوظائف المتاحة</p>
-            <form id="upload-form">
-                <div class="file-input-wrapper">
-                    <input type="file" id="cv-file" name="file" accept=".pdf" required>
-                    <label for="cv-file" class="file-label"><span id="file-name">اختر ملف PDF</span></label>
-                </div>
-                <button type="submit" id="upload-btn" class="btn btn-primary">رفع وتحليل</button>
-            </form>
-            <div id="upload-error" class="error-message"></div>
-        </section>
-
-        <section id="progress-section" class="card hidden">
-            <h2>⏳ جاري التحليل...</h2>
-            <div id="progress-steps">
-                <div class="step" data-step="cv_analysis"><div class="step-icon">📝</div><div class="step-label">تحليل السيرة الذاتية</div><div class="step-status"></div></div>
-                <div class="step" data-step="embedding"><div class="step-icon">🔢</div><div class="step-label">التمثيل الرقمي</div><div class="step-status"></div></div>
-                <div class="step" data-step="fetch_jobs"><div class="step-icon">📥</div><div class="step-label">جلب الوظائف</div><div class="step-status"></div></div>
-                <div class="step" data-step="matching"><div class="step-icon">🎯</div><div class="step-label">المطابقة</div><div class="step-status"></div></div>
-                <div class="step" data-step="complete"><div class="step-icon">✅</div><div class="step-label">اكتمل</div><div class="step-status"></div></div>
-            </div>
-            <div id="progress-message" class="progress-message"></div>
-        </section>
-
-        <section id="results-section" class="hidden">
-            <div id="profile-summary" class="card"><h2>👤 ملخص الملف الشخصي</h2><div id="profile-content"></div></div>
-            <div class="card"><h2>🎯 نتائج المطابقة</h2><div id="results-list"></div></div>
-            <div class="card chat-card">
-                <h2>💬 Match Agent</h2>
-                <div id="chat-messages" class="chat-messages"></div>
-                <form id="chat-form" class="chat-form">
-                    <input type="text" id="chat-input" placeholder="اسأل عن نتائج المطابقة..." autocomplete="off">
-                    <button type="submit" class="btn btn-chat">إرسال</button>
-                </form>
-            </div>
-        </section>
-    </div>
-    <script>const PROFILE_ID = {{ profile_id | default('null') }};</script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-</body>
-</html>
+<a class="skip-link" href="#main">انتقل إلى المحتوى</a>
+<header class="site-header">
+<a href="/" class="brand" aria-label="AI Opportunity Agent — الرئيسية"><span class="brand-mark" aria-hidden="true">↗</span><span><strong>فُرصة</strong><small lang="en" dir="ltr">AI Opportunity Agent</small></span></a>
+<div class="header-actions"><span class="header-caption">خطوتك القادمة تبدأ من هنا</span><a href="/" class="button button-quiet hidden" id="new-analysis">تحليل سيرة جديدة ＋</a></div>
+</header>
+<main id="main" class="container">
+{% if error %}<div class="notice danger" role="alert">{{ error }} — <a href="/">العودة للرئيسية</a></div>{% endif %}
+<section id="upload-section" class="landing">
+<div class="landing-copy">
+<span class="eyebrow"><span class="spark" aria-hidden="true">✦</span> مساعدك الذكي للفرص المهنية</span>
+<h1>خبراتك تستحق<br>فرصة <span>تشبهك.</span></h1>
+<p class="intro">ارفع سيرتك الذاتية، واكتشف الوظائف الأقرب لمهاراتك.<br class="desktop-break"> افهم نقاط قوتك، وناقش خياراتك مع مساعدك الذكي.</p>
+<div class="journey"><span><b>01</b> ارفع سيرتك</span><i aria-hidden="true">←</i><span><b>02</b> اكتشف فرصك</span><i aria-hidden="true">←</i><span><b>03</b> خذ خطوتك</span></div>
+<div class="landing-note"><span class="note-line"></span><p>اختيارات أوضح.<br><strong>بداية أقرب لطموحك.</strong></p></div>
+</div>
+<div class="upload-panel card">
+<div class="panel-heading"><span class="section-kicker">لنبدأ بسيرتك</span><span class="mini-label">PDF</span></div>
+<h2>فرصتك تبدأ بملف واحد</h2><p class="muted">سنقرأ مهاراتك وخبراتك ونبحث عن الأنسب لك.</p>
+<form id="upload-form">
+<div class="drop-zone" id="drop-zone">
+<input type="file" id="cv-file" name="file" accept=".pdf,application/pdf" aria-label="اختر السيرة الذاتية بصيغة PDF">
+<label for="cv-file" class="file-label">
+<svg class="upload-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M29 7H13a3 3 0 0 0-3 3v28a3 3 0 0 0 3 3h22a3 3 0 0 0 3-3V16L29 7Z" stroke="currentColor" stroke-width="1.8"/><path d="M28 7v10h10M24 34V23m-5 5 5-5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<strong id="file-name">اسحب سيرتك الذاتية إلى هنا</strong><span id="file-hint">أو <u>اختر ملفًا من جهازك</u></span><small>ملف PDF نصّي · حتى 16 MB</small>
+</label></div>
+<button type="submit" id="upload-btn" class="button button-primary">اكتشف الوظائف المناسبة <span aria-hidden="true">←</span></button>
+<div id="upload-error" class="error-message" role="alert"></div>
+</form>
+<p class="privacy-note">يُرسل نص سيرتك إلى خدمة الذكاء الاصطناعي لتحليله.<br>يُحذف ملف PDF بعد القراءة وتبقى بيانات التحليل محفوظة.</p>
+</div>
+<div class="value-strip">
+<div><span class="feature-icon" aria-hidden="true">◎</span><div><h3>مطابقة تفهم خبراتك</h3><p>بحث بالمعنى، يتجاوز الكلمات المتطابقة.</p></div></div>
+<div><span class="feature-icon" aria-hidden="true">≋</span><div><h3>صورة أوضح لكل فرصة</h3><p>نقاط القوة والمهارات التي تحتاج تطويرها.</p></div></div>
+<div><span class="feature-icon" aria-hidden="true">↗</span><div><h3>مساعد للخطوة التالية</h3><p>ناقش نتائجك واكتب خطاب تقديم مخصصًا.</p></div></div>
+</div></section>
+<section id="progress-section" class="card progress-panel hidden" aria-labelledby="progress-title">
+<div class="section-heading"><div><span class="section-kicker">من الخبرات إلى الفرص</span><h2 id="progress-title">نبحث عن الفرص الأقرب إليك</h2></div><span id="progress-indicator" class="activity-dot" aria-hidden="true"></span></div>
+<ol id="progress-steps">
+<li class="step" data-step="cv_analysis"><span class="step-icon">01</span><span class="step-label">قراءة السيرة</span><span class="step-status"></span></li>
+<li class="step" data-step="embedding"><span class="step-icon">02</span><span class="step-label">فهم المهارات</span><span class="step-status"></span></li>
+<li class="step" data-step="fetch_jobs"><span class="step-icon">03</span><span class="step-label">جمع الوظائف</span><span class="step-status"></span></li>
+<li class="step" data-step="matching"><span class="step-icon">04</span><span class="step-label">تقييم المطابقة</span><span class="step-status"></span></li>
+<li class="step" data-step="complete"><span class="step-icon">05</span><span class="step-label">نتائجك جاهزة</span><span class="step-status"></span></li>
+</ol>
+<p id="progress-message" class="progress-message" role="status" aria-live="polite">نجهّز تحليل سيرتك…</p>
+<a href="/" id="retry-analysis" class="button button-quiet hidden">رفع سيرة وإجراء تحليل جديد</a>
+</section>
+<section id="results-section" class="hidden" aria-labelledby="results-title">
+<div class="results-heading"><div><span class="section-kicker">الخطوة التالية في رحلتك</span><h1 id="results-title">فرص أقرب إلى خبراتك</h1><p class="muted">استكشف نتائجك، وافهم ما يجعل كل فرصة مناسبة لك.</p></div><span class="results-label" id="result-count">نتائج المطابقة</span></div>
+<div id="analysis-notice" class="notice hidden" role="status"></div>
+<div id="profile-summary" class="card profile-card"><span class="profile-avatar" aria-hidden="true">◎</span><div id="profile-content"><p class="muted">جاري تحميل ملخص السيرة…</p></div></div>
+<div class="results-layout">
+<section class="jobs-column" aria-label="الوظائف المطابقة">
+<div class="jobs-heading"><h2>الوظائف المقترحة <span id="jobs-count">0</span></h2><span>مرتبة حسب تقييم المطابقة</span></div>
+<p class="score-disclaimer">الدرجات تقديرات للمقارنة، وليست احتمالًا للقبول في الوظيفة.</p>
+<div id="results-list" aria-live="polite"></div>
+</section>
+<aside class="card chat-card" id="chat-panel" aria-labelledby="chat-title">
+<div class="chat-heading"><span class="agent-avatar" aria-hidden="true">✦</span><div><h2 id="chat-title">مساعد فرصتك</h2><p id="connection-status" role="status">جاري الاتصال…</p></div><span class="mini-label" lang="en">AI</span></div>
+<div id="selected-job" class="selected-job hidden"><div><small>نتحدث عن</small><strong id="selected-job-title"></strong></div><button id="clear-selection" type="button" aria-label="إلغاء اختيار الوظيفة">×</button></div>
+<div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="المحادثة"></div>
+<div id="chat-busy" class="chat-busy hidden" role="status"><span class="activity-dot" aria-hidden="true"></span> المساعد يجهّز الرد…</div>
+<div id="quick-questions" class="quick-questions hidden"><button type="button" data-question="لماذا هذه الوظيفة مناسبة لي؟">لماذا تناسبني؟</button><button type="button" data-question="ما المهارات التي تنقصني لهذه الوظيفة؟">ما الذي ينقصني؟</button><button type="button" data-question="قارن هذه الوظيفة ببقية الوظائف المطابقة.">قارن بالفرص الأخرى</button><button type="button" data-question="كيف أحسّن سيرتي الذاتية لهذه الوظيفة؟" data-action="improve_cv">حسّن سيرتي لهذه الفرصة</button></div>
+<form id="chat-form" class="chat-form"><label class="sr-only" for="chat-input">رسالتك للمساعد</label><textarea id="chat-input" rows="2" maxlength="4000" placeholder="اسأل عن فرصة، تحسين سيرتك، أو خطاب تقديم…"></textarea><button type="submit" id="chat-send" class="button button-primary" aria-label="إرسال الرسالة" disabled>↑</button></form>
+<p id="chat-error" class="error-message" role="alert"></p><p class="chat-footnote">راجع إجابات المساعد قبل استخدامها في التقديم.</p>
+</aside></div></section>
+</main>
+<footer class="site-footer"><span>فُرصة / خطوات أوضح لمستقبلك المهني</span><span lang="en" dir="ltr">Powered by AI. Guided by you.</span></footer>
+<noscript><p class="notice danger">يرجى تفعيل JavaScript لرفع السيرة واستخدام المساعد.</p></noscript>
+<script>const PROFILE_ID = {{ profile_id | default(none) | tojson }};</script>
+<script defer src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body></html>

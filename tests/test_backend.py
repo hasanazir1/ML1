@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 import requests
 
 from flask_app.database import db
-from flask_app.agents import cv_analyzer, match_scorer, chat_orchestrator, chat_query, cover_letter
+from flask_app.agents import cv_analyzer, match_scorer, chat_orchestrator, chat_query, cover_letter, cv_improvement
 from flask_app.utils import llm_service, embedding_service, http_client, jobs_fetcher
 from flask_app.utils.prompts import build_agent_prompt
 
@@ -61,7 +61,7 @@ class BackendTests(unittest.TestCase):
         db.init_db()
         self.assertNotEqual(db.get_llm_role('Chat Orchestrator')['specific_instructions'], 'outdated')
         self.assertEqual(db.get_cv_profile(self.pid)['raw_text'], 'Private raw CV')
-        self.assertEqual(len(db.get_all_llm_roles()), 5)
+        self.assertEqual(len(db.get_all_llm_roles()), 6)
 
     def test_legacy_schema_upgrade(self):
         legacy = str(Path(self.tmp.name) / 'legacy.db')
@@ -242,6 +242,16 @@ class BackendTests(unittest.TestCase):
         with patch.object(chat_orchestrator, 'call_llm', return_value='```json\n'+json.dumps(decision)+'\n```'):
             self.assertEqual(chat_orchestrator.route_message('test', jobs)[1], self.jid)
 
+    def test_router_selects_cv_improvement_and_rejects_foreign_job(self):
+        jobs = [{'job_id': self.jid, 'title': 'Developer'}]
+        for job_id, expected in ((self.jid, 'CV Improvement Expert'),
+                                 (None, 'CV Improvement Expert'),
+                                 (999, 'NeedsClarification')):
+            decision = {'agent': 'CV Improvement Expert', 'job_id': job_id,
+                        'needs_clarification': False}
+            with patch.object(chat_orchestrator, 'call_llm', return_value=json.dumps(decision)):
+                self.assertEqual(chat_orchestrator.route_message('Improve my CV', jobs)[0], expected)
+
     def test_cover_button_target_and_history(self):
         self.add_match()
         for i in range(8):
@@ -258,6 +268,73 @@ class BackendTests(unittest.TestCase):
         with patch.object(server, 'generate_cover_letter') as generate:
             sock.emit('chat_message', {'profile_id': self.pid, 'job_id': 999, 'message': 'write'})
             generate.assert_not_called()
+
+    def test_selected_job_questions_and_auto_route(self):
+        self.add_match()
+        sock = self.socket()
+        with patch.object(server, 'answer_question', return_value='Answer') as answer, \
+             patch.object(server, 'generate_cover_letter') as cover, \
+             patch.object(server, 'route_message', return_value=('Chat Query Expert', None, '')) as route:
+            sock.emit('chat_message', {'profile_id': self.pid, 'job_id': self.jid,
+                                      'action': 'ask', 'message': 'Why this job?'})
+            route.assert_not_called()
+            cover.assert_not_called()
+            self.assertEqual(answer.call_args.kwargs['selected_job_id'], self.jid)
+            sock.emit('chat_message', {'profile_id': self.pid, 'job_id': self.jid,
+                                      'action': 'auto', 'message': 'Explain more'})
+            self.assertEqual([job['job_id'] for job in route.call_args.args[1]], [self.jid])
+            self.assertEqual(answer.call_args.kwargs['selected_job_id'], self.jid)
+
+    def test_cv_improvement_selected_and_general_requests(self):
+        self.add_match()
+        sock = self.socket()
+        with patch.object(server, 'suggest_cv_improvements', return_value='Suggestions') as improve, \
+             patch.object(server, 'route_message', return_value=('CV Improvement Expert', None, '')) as route, \
+             patch.object(server, 'generate_cover_letter') as cover:
+            sock.emit('chat_message', {'profile_id': self.pid, 'job_id': self.jid,
+                                      'action': 'improve_cv', 'message': 'Tailor my CV'})
+            route.assert_not_called()
+            cover.assert_not_called()
+            self.assertEqual(improve.call_args.kwargs['match']['job_id'], self.jid)
+            self.assertEqual(db.get_recent_chat_messages(self.pid)[-1]['job_id'], self.jid)
+            sock.emit('chat_message', {'profile_id': self.pid, 'message': 'Improve my CV'})
+            self.assertIsNone(improve.call_args.kwargs['match'])
+            sock.emit('chat_message', {'profile_id': self.pid, 'job_id': self.jid,
+                                      'action': 'auto', 'message': 'Improve my CV for this job'})
+            self.assertEqual(improve.call_args.kwargs['match']['job_id'], self.jid)
+            self.assertEqual([j['job_id'] for j in route.call_args.args[1]], [self.jid])
+            sock.emit('chat_message', {'profile_id': self.pid, 'job_id': 999,
+                                      'action': 'improve_cv', 'message': 'Tailor my CV'})
+            self.assertEqual(improve.call_count, 3)
+
+    def test_cv_improvement_prompt_uses_saved_facts_without_contact_details(self):
+        self.add_match()
+        profile = db.get_cv_profile(self.pid)
+        match = db.get_match_results(self.pid)[0]
+        with patch.object(cv_improvement, 'call_llm', return_value='Suggestions') as llm:
+            result = cv_improvement.suggest_cv_improvements(profile, 'Improve', match=match)
+        self.assertEqual(result, 'Suggestions')
+        self.assertIn('Developer', llm.call_args.args[1])
+        self.assertIn('Python', llm.call_args.args[1])
+        self.assertNotIn('Private raw CV', llm.call_args.args[1])
+
+    def test_chat_actions_reject_unknown_and_unmatched_jobs(self):
+        self.add_match()
+        sock = self.socket()
+        with patch.object(server, 'answer_question') as answer, \
+             patch.object(server, 'generate_cover_letter') as cover:
+            for action, job_id in [('ask', 999), ('cover_letter', 999), ('unknown', self.jid)]:
+                sock.emit('chat_message', {'profile_id': self.pid, 'job_id': job_id,
+                                          'action': action, 'message': 'Test'})
+            answer.assert_not_called()
+            cover.assert_not_called()
+
+    def test_selected_job_in_answer_context(self):
+        self.add_match()
+        with patch.object(chat_query, 'call_llm', return_value='Answer') as llm:
+            chat_query.answer_question('Why?', self.pid, selected_job_id=self.jid)
+        self.assertIn(f'job_id={self.jid}', llm.call_args.args[1])
+        self.assertIn('الوظيفة المختارة صراحة', llm.call_args.args[1])
 
     def test_prompt_template_uses_all_fields(self):
         prompt = build_agent_prompt({'domain': 'DOMAIN', 'specific_instructions': 'INSTRUCTIONS',

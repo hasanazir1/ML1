@@ -4,5 +4,8 @@ flask_app/uploads/
 *.db-wal
 *.db-shm
 private_archive/
+.slide-build/
+venv/
+.venv/
 **/__pycache__/
 *.pyc

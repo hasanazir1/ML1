@@ -1,4 +1,8 @@
-# 🤖 AI Opportunity Agent
+# AI Opportunity Agent
+
+Course final project: upload a text-based PDF CV, review matched jobs, and ask a chat assistant about a selected job. The chat can explain matches, suggest CV improvements, and write a tailored cover letter.
+
+[Final project slides](presentation/AI_Opportunity_Agent_Final_Project.pptx)
 
 حلول ذكية لتحليل السيرة الذاتية والبحث عن وظائف مطابقة باستخدام الذكاء الاصطناعي.
 
@@ -9,7 +13,7 @@
 - **جلب الوظائف** من Jobs.ps عبر RSS مع بيانات احتياطية (Seed Data)
 - **مطابقة ذكية** باستخدام Embeddings + LLM (OpenRouter)
 - **متابعة التقدم** في الوقت الحقيقي عبر WebSocket (SocketIO)
-- **دردشة تفاعلية** مع Match Agent لطرح الأسئلة وكتابة Cover Letters
+- **دردشة تفاعلية** لفهم النتائج وتحسين السيرة وكتابة Cover Letters
 
 ## المتطلبات
 
@@ -18,23 +22,16 @@
 
 ## التثبيت
 
-```bash
-# استنساخ المشروع
-git clone <repo-url>
-cd AI Opportunity Agent
-
-# إنشاء بيئة افتراضية (اختياري)
+```powershell
+git clone https://github.com/hasanazir1/ML1.git
+cd ML1
 python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
-
-# تثبيت المتطلبات
+venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# إنشاء ملف .env
-copy .env.example .env
-# ثم عدّل .env وأضف مفتاح OpenRouter
+Copy-Item .env.example .env
 ```
+
+ضع مفتاح OpenRouter الحقيقي وقيمة عشوائية لـ`SECRET_KEY` داخل `.env` قبل التشغيل. الملف مستثنى من Git. على Linux أو macOS استخدم `source venv/bin/activate` و`cp .env.example .env`.
 
 ## التشغيل
 
@@ -81,6 +78,7 @@ AI Opportunity Agent/
 │   │   ├── match_scorer.py      # خبير تقييم المطابقة
 │   │   ├── chat_orchestrator.py # منسق المحادثة
 │   │   ├── chat_query.py        # خبير الأسئلة
+│   │   ├── cv_improvement.py    # خبير تحسين السيرة
 │   │   └── cover_letter.py      # مولّد رسائل التقديم
 │   ├── templates/
 │   │   └── index.html
@@ -88,6 +86,7 @@ AI Opportunity Agent/
 │       ├── css/style.css
 │       └── js/main.js
 ├── tests/                  # اختبارات مستقلة عن OpenRouter والبيانات الحقيقية
+├── presentation/           # شرائح المشروع بالإنجليزية
 ├── requirements.txt
 ├── .env.example
 ├── run.py
@@ -109,7 +108,9 @@ SQLite مع 5 جداول:
 2. **Match Scoring Expert** - يقارن CV مع وظيفة ويصدر تقييم
 3. **Chat Orchestrator** - يوجه الرسائل للخبير المناسب
 4. **Chat Query Expert** - يجيب على أسئلة المستخدم
-5. **Cover Letter Generator** - يكتب رسائل تقديم احترافية
+5. **CV Improvement Expert** - يقترح تعديلات للسيرة مرتبطة بالوظيفة
+
+6. **Cover Letter Generator Expert** - يكتب رسائل تقديم احترافية
 
 ## تدفق تحليل السيرة الذاتية
 
@@ -133,7 +134,7 @@ SQLite مع 5 جداول:
 	-> Chat Orchestrator
 	-> JSON decision: agent + job_id + needs_clarification
 	-> التحقق من الوكيل المسموح
-	-> Chat Query Expert أو Cover Letter Generator Expert
+	-> Chat Query Expert أو CV Improvement Expert أو Cover Letter Generator Expert
 	-> عرض الرد وحفظه في chat_messages
 ```
 
@@ -146,6 +147,7 @@ SQLite مع 5 جداول:
 | Chat Orchestrator | User message, last 6 messages and current jobs | JSON decision with `agent`, `job_id`, `needs_clarification` | `route_message()` |
 | Chat Query Expert | User question, profile id, and saved match results | Natural-language answer | `answer_question()` |
 | Cover Letter Generator Expert | CV data and selected job | Cover letter text | `generate_cover_letter()` |
+| CV Improvement Expert | Parsed CV data and optional selected job match | Suggestions to improve the CV text | `suggest_cv_improvements()` |
 | Semantic Search step | CV embedding and up to JOBS_LIMIT recent jobs | Top 10 jobs ranked by cosine similarity | `search_matching_jobs()` |
 
 ## ملاحظات
@@ -156,14 +158,14 @@ SQLite مع 5 جداول:
 
 ## التعديلات الأساسية وعلاقتها بالواجبات
 
-- **Homework 1:** الخبراء الخمسة يستخدمون `MASTER_TEMPLATE` في `utils/prompts.py`. الدور والتخصص والتعليمات والسياق والأمثلة تأتي من `llm_roles`. تعديل CSV ثم إعادة تشغيل التطبيق يحدّث الأدوار دون حذف CVs أو النتائج.
+- **Homework 1:** الأدوار الستة تستخدم `MASTER_TEMPLATE` في `utils/prompts.py`. الدور والتخصص والتعليمات والسياق والأمثلة تأتي من `llm_roles`. تعديل CSV ثم إعادة تشغيل التطبيق يحدّث الأدوار دون حذف CVs أو النتائج.
 - **Homework 2:** تُخزَّن embeddings كـJSON في SQLite. يتم فحص الأرقام والأبعاد واسم النموذج قبل المقارنة، وإعادة إنشاء cache غير المتوافق. البحث الدلالي هنا خطوة Python محددة ضمن workflow التحليل، وليس خبيرًا يختاره منسق الشات.
-- الـOrchestrator يختار أحد خبيري الدردشة بقرار JSON، والتنفيذ يتم بدوال Python معروفة. زر Cover Letter يحدد الوظيفة مباشرة دون استدعاء المنسق. لا يوجد `eval` أو `exec` لمخرجات النموذج.
+- الـOrchestrator يختار أحد خبراء الدردشة الثلاثة بقرار JSON، والتنفيذ يتم بدوال Python معروفة. أزرار الأسئلة والخطاب وتحسين السيرة تختار الخبير مباشرة عندما يكون الإجراء واضحًا. لا يوجد `eval` أو `exec` لمخرجات النموذج.
 - آخر ست رسائل تُرسل إلى المنسق والخبير مع السؤال الحالي، ويُحفظ `job_id` المختار مع الرسائل. لا تُكرر الرسالة الحالية ضمن التاريخ. يُعالَج طلب شات واحد لكل profile في الوقت نفسه.
 
 ## حالة التحليل والـAPI
 
-الحالة وآخر حدث progress محفوظان في SQLite. يُعاد إرسال الحدث عند اتصال الصفحة، ويُتاح أيضًا في `GET /api/results/<id>` تحت `analysis` لتستخدمه الواجهة القادمة.
+الحالة وآخر حدث progress محفوظان في SQLite. يُعاد إرسال الحدث عند اتصال الصفحة، ويُتاح أيضًا في `GET /api/results/<id>` تحت `analysis` لتعرضه الواجهة الحالية.
 
 ```text
 pending → cv_analysis → embedding → fetch_jobs → matching → completed
@@ -172,7 +174,7 @@ pending → cv_analysis → embedding → fetch_jobs → matching → completed
 
 أسماء أحداث Socket.IO القديمة تبقى متوافقة مع الواجهة: `complete` يُحفظ كـ`completed` و`error` كـ`failed`. عند بدء التشغيل عبر `python run.py`، تتحول المهام المنقطعة إلى `partial` إذا كانت لها نتائج، أو `failed` إذا لم تكن لها نتائج. لا يوجد استئناف تلقائي: يعيد المستخدم رفع الملف. حالة بيانات الإصدار القديم `legacy` لأن عدد النتائج وحده لا يثبت اكتمال التحليل.
 
-الـAPI يعيد حقول العرض فقط، دون raw CV أو device_id أو embedding. حقلا `similarity` و`match_score` موجودان في النتائج؛ الأول تشابه دلالي والثاني تقييم النموذج، ولا يمثل أي منهما احتمال الحصول على الوظيفة. عند `semantic_ranking=degraded` يكون اختيار المرشحين تقريبيًا. تصميم الواجهة وعرض هذا التحذير مؤجلان للمرحلة التالية.
+الـAPI يعيد حقول العرض فقط، دون raw CV أو device_id أو embedding. حقلا `similarity` و`match_score` موجودان في النتائج؛ الأول تشابه دلالي والثاني تقييم النموذج، ولا يمثل أي منهما احتمال الحصول على الوظيفة. عند `semantic_ranking=degraded` يكون اختيار المرشحين تقريبيًا، وتعرض الواجهة تحذيرًا واضحًا بدل درجة تشابه مضللة.
 
 ## الاختبارات
 
@@ -192,7 +194,21 @@ python -B -m unittest discover -v
 - السيرفر يستخدم Werkzeug للتجربة المحلية. يُسمح بالتشغيل دون terminal تفاعلي على loopback فقط؛ هذا لا يضيف دعم نشر إنتاجي.
 - HTTP يعيد المحاولة مرة واحدة عند انقطاع الاتصال أو 429 أو 5xx. لا يعيد المحاولة عند مفتاح خاطئ؛ فشل الـLLM لا يُفسَّر على أنه غموض وظيفة.
 - لم تُضف أفعال حذف أو تقديم وظائف آليًا. Human Validation من Homework 2 يصبح مناسبًا إذا أضيفت أفعال تعديل أو إرسال لاحقًا؛ ليس شرطًا جديدًا مفروضًا على هذا المشروع.
-- الواجهة الحالية باقية، والمرحلة التالية هي التصميم وعرض تنبيه degraded وتحسينات العرض. خطة التنفيذ في `IMPLEMENTATION_PLAN.md`.
+- الواجهة عربية RTL باستخدام HTML وCSS وJavaScript فقط، دون إطار إضافي. الشات بجانب النتائج على الكمبيوتر وتحتها على الهاتف.
+
+## الواجهة والشات المرتبط بالوظيفة
+
+زر «ناقش هذه الفرصة» يحدد `job_id` ويعرض اسم الوظيفة في الشات. الأسئلة السريعة ترسل `action=ask` إلى خبير الأسئلة مباشرة؛ زر الخطاب يرسل `action=cover_letter`. الرسائل الحرة ترسل `action=auto` للـOrchestrator، مع تقييد اختياره بالوظيفة المحددة إن وجدت. يتحقق الخادم أن الوظيفة من نتائج صاحب الجلسة. الطلبات القديمة التي ترسل `job_id` فقط تبقى طلبات خطاب تقديم.
+
+زر «حسّن سيرتي لهذه الفرصة» يرسل `action=improve_cv` مع `job_id` المحدد إلى CV Improvement Expert. يمكن أيضًا طلب تحسين السيرة عمومًا برسالة حرة دون تحديد وظيفة. يستخدم الخبير بيانات السيرة المحللة؛ وعند اختيار وظيفة يستخدم وصفها ونتيجة المطابقة أيضًا. يعرض اقتراحات نصية فقط ولا يغيّر قاعدة البيانات أو ملف PDF، ولا يرسل النص الخام أو بيانات الاتصال لهذا الخبير.
+
+يمكن فحص التصميم ببيانات وهمية دون استهلاك API أو لمس قاعدة المشروع:
+
+```bash
+python -B -m tests.preview_ui
+```
+
+افتح `http://127.0.0.1:5055` لصفحة الرفع أو `http://127.0.0.1:5055/_preview` لنتائج تجريبية. ردود هذه المعاينة محاكية وليست من AI. أوقفها بـCtrl+C. التشغيل الحقيقي يبقى `python run.py`.
 
 ## الترخيص
 

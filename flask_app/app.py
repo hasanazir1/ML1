@@ -23,6 +23,7 @@ from flask_app.agents.match_scorer import score_match
 from flask_app.agents.chat_orchestrator import route_message
 from flask_app.agents.chat_query import answer_question
 from flask_app.agents.cover_letter import generate_cover_letter
+from flask_app.agents.cv_improvement import suggest_cv_improvements
 
 app = Flask(__name__,
             template_folder='templates',
@@ -474,16 +475,35 @@ def process_chat_message(data):
     ]
 
     requested_job_id = event_profile_id({'profile_id': data.get('job_id')})
+    # Old result-card clients used job_id alone to request a cover letter.
+    action = data.get('action', 'cover_letter' if 'job_id' in data else 'auto')
+    if action not in ('auto', 'ask', 'cover_letter', 'improve_cv'):
+        emit('chat_response', {'sender': 'agent', 'message': 'الإجراء المطلوب غير مدعوم.'})
+        return
 
     allowed_job_ids = {m['job_id'] for m in match_results}
     if 'job_id' in data:
         if requested_job_id in allowed_job_ids:
-            # Explicit request from a result-card button: target that exact job.
-            target_role = "Cover Letter Generator Expert"
             target_job_id = requested_job_id
+            if action == 'ask':
+                target_role = 'Chat Query Expert'
+            elif action == 'cover_letter':
+                target_role = 'Cover Letter Generator Expert'
+            elif action == 'improve_cv':
+                target_role = 'CV Improvement Expert'
+            else:
+                # Free text can still request either expert, but the selected
+                # job is fixed: the model cannot silently pick a different job.
+                target_role, _, _ = route_message(user_message, [j for j in jobs if j['job_id'] == requested_job_id], history=history)
         else:
             target_role = "NeedsClarification"
             target_job_id = None
+    elif action == 'cover_letter':
+        target_role, target_job_id = 'NeedsClarification', None
+    elif action == 'ask':
+        target_role, target_job_id = 'Chat Query Expert', None
+    elif action == 'improve_cv':
+        target_role, target_job_id = 'CV Improvement Expert', None
     else:
         target_role, target_job_id, _ = route_message(user_message, jobs, history=history)
 
@@ -504,8 +524,11 @@ def process_chat_message(data):
             response_text = generate_cover_letter(profile, job_data, profile_id, user_message=user_message, history=history)
         else:
             response_text = "عذراً، لم أتمكن من العثور على الوظيفة المحددة."
+    elif target_role == 'CV Improvement Expert':
+        selected_match = next((m for m in match_results if m['job_id'] == target_job_id), None)
+        response_text = suggest_cv_improvements(profile, user_message, match=selected_match, history=history)
     else:
-        response_text = answer_question(user_message, profile_id, jobs, history=history)
+        response_text = answer_question(user_message, profile_id, jobs, history=history, selected_job_id=target_job_id)
 
     if response_text:
         db.insert_chat_message(profile_id, 'agent', response_text, target_job_id)
@@ -513,6 +536,7 @@ def process_chat_message(data):
     emit('chat_response', {
         'sender': 'agent',
         'message': response_text,
+        'job_id': target_job_id,
         'timestamp': datetime.now().isoformat()
     })
 
